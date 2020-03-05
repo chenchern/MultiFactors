@@ -13,7 +13,7 @@ from dateutil.parser import parse
 class BasicUtils:
     """
     In this part, we write some basic functions that are helpful.
-    >>> raw_data = pd.read_csv('valuation.csv')
+    >>> raw_data = pd.read_csv('Load_clean_data/valuation.csv')
     """
     @staticmethod
     def df_division(data, col_name, n_group=5, ascending=False):
@@ -51,7 +51,7 @@ class BasicUtils:
         return division
 
     @staticmethod
-    def _standardize(sequence, multiples=5):
+    def _standardize(sequence, multiples=5):  # TODO: seems a little slow. Faster it later. 2020-03-05
         """
         standardize a sequence: firstly, remove extreme values of this sequence; secondly, subtract mean value
         and divide standard value.
@@ -75,12 +75,32 @@ class BasicUtils:
             if D < median - multiples * new_median:
                 sequence[index] = median - multiples * new_median
 
-        # %% standardize.
+        # %% standardize. 标准化以后的NA值是保留了的
         std = np.nanstd(sequence)
         mean = np.nanmean(sequence)
         sd_sequence = [(x-mean)/std for x in sequence]
 
         return sd_sequence
+
+    @staticmethod
+    def df_one_hot_encode(data, col_name):
+        """
+
+        :param data:
+        :param col_name:
+        :return:
+        :examples:
+        >>> data = raw_data[raw_data['day'] == '2019-12-31'].head(5)
+        >>> col_name = 'ind_name'
+        >>> BasicUtils.df_one_hot_encode(data, col_name)
+        """
+        assert col_name in data.columns, '{} is not in columns of data!'.format(col_name)
+
+        category = data[col_name].unique().tolist()
+        for ind in category:
+            data[ind] = [int(x == ind) for x in data[col_name]]
+
+        return data
 
 
 class DateUtils:
