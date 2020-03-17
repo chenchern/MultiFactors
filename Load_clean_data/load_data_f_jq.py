@@ -53,6 +53,8 @@ valuation_data.to_csv(os.path.join(os.getcwd(), 'Load_clean_data/valuation.csv')
 对于stock_code中的一些股票，估值数据和量价数据都没有，但是聚宽的函数api底层代码的问题，get_fundamentals遇到没有的股票代码不会报错，
 但是get_price遇到没有的股票代码会报错，所以我们提取valuation_data的stock_code数据出来
 """
+valuation_data = pd.read_csv('Load_clean_data/valuation.csv', index_col=0)
+
 # %% 获取每月最后一个交易日的全股票收盘价数据
 stock_code = valuation_data.stock_code.unique().tolist()
 price_data = get_bars(stock_code, count=150, unit='1M', fields=['date', 'close'],
@@ -63,7 +65,7 @@ price_data = price_data.reset_index(drop=False).drop(['level_1'], axis=1).rename
 聚宽这个get_price的api真的很奇怪，按月提取的数据有些数据居然不是最后一个交易日的。目前没找到根据单独一天的日期来提取行情的接口，
 所以暂时采用比较粗糙的做法：把取出来的那个月的数据日期映射为当月最后一个交易日日期。
 """
-price_data['date'] = DateUtils.to_floor_busi_day(*price_data['date'])
+price_data['date'] = DateUtils.to_ceiling_busi_day(*price_data['date'])
 
 # %% 保存price_data
 price_data.to_csv(os.path.join(os.getcwd(), 'Load_clean_data/price.csv'))

@@ -7,6 +7,7 @@
 
 import pandas as pd
 import numpy as np
+from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
 
 
@@ -108,32 +109,72 @@ class DateUtils:
     For some basic functions to deal with date.
     """
     @staticmethod
-    def _to_floor_busi_day(date):
+    def _to_ceiling_busi_day(date):
         """
         Map a day to the last business day of its month.
 
         :param date: str or any other format of datetime.
-        :return floor_busi_day: str. Last business day of this month.
+        :return ceiling_busi_day: str. Last business day of this month.
         :examples:
-        >>> DateUtils._to_floor_busi_day('2020-01-01')
-        >>> DateUtils._to_floor_busi_day('2020-01-31')
-        >>> DateUtils._to_floor_busi_day('2020-02-23')
+        >>> DateUtils._to_ceiling_busi_day('2020-01-01')
+        >>> DateUtils._to_ceiling_busi_day('2020-01-31')
+        >>> DateUtils._to_ceiling_busi_day('2019-11-30')
+        >>> DateUtils._to_ceiling_busi_day('2019-12-21')
         """
         try:
             date = parse(date)
         except TypeError:
             date = date
 
-        floor_busi_day = pd.date_range(date, periods=1, freq='BM').strftime('%Y-%m-%d')[0]
+        date = date.replace(day=1)
+        ceiling_busi_day = pd.date_range(date, periods=1, freq='BM').strftime('%Y-%m-%d')[0]
+        return ceiling_busi_day
+
+    @staticmethod
+    def to_ceiling_busi_day(*args):
+        """
+        Map multiple days to the last business days of their month.
+
+        :param args:
+        :return: list. list of date in format of string.
+        :examples:
+        >>> DateUtils.to_ceiling_busi_day(*('2020-01-01', '2020-02-23'))
+        >>> DateUtils.to_ceiling_busi_day('2020-01-01', '2020-02-23')
+        """
+        ceiling_busi_day = [DateUtils._to_ceiling_busi_day(date) for date in args]
+
+        return ceiling_busi_day
+
+    @staticmethod
+    def _to_floor_busi_day(date):
+        """
+        Map a day to the previous last business day of its month.
+
+        :param date:
+        :return:
+        :examples:
+        >>> date = '2019-01-01'
+        >>> DateUtils._to_floor_busi_day('2019-01-01')
+        >>> DateUtils._to_floor_busi_day('2020-02-29')
+        >>> DateUtils._to_floor_busi_day('2019-12-31')
+        """
+        try:
+            date = parse(date)
+        except TypeError:
+            date = date
+
+        date = date + relativedelta(months=-1)
+        date = date.replace(day=1)
+        floor_busi_day = pd.date_range(date, periods=1, freq='BM').strftime("%Y-%m-%d")[0]
+
         return floor_busi_day
 
     @staticmethod
     def to_floor_busi_day(*args):
         """
-        Map multiple days to the last business of their month.
 
         :param args:
-        :return: list. list of date in format of string.
+        :return:
         :examples:
         >>> DateUtils.to_floor_busi_day(*('2020-01-01', '2020-02-23'))
         >>> DateUtils.to_floor_busi_day('2020-01-01', '2020-02-23')
