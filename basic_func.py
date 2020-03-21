@@ -58,23 +58,25 @@ class BasicUtils:
         and divide standard value.
 
         :param sequence:
-        :param multiples:
+        :param multiples: float or None.
+                    if float, remove extreme values. if None, do not remove extreme values.
         :return:
         :examples:
         >>> sequence = [1, 2, np.nan, 4, 5]
         >>> sequence = pd.Series([1, 2, np.nan, 4, 5])
         >>> BasicUtils._standardize(sequence)
         """
-        median = np.median(list(filter(lambda x: not pd.isnull(x), sequence)))
-        middle_sequence = [abs(x - median) for x in sequence]
-        new_median = np.median(list(filter(lambda x: not pd.isnull(x), middle_sequence)))
+        if multiples is not None:
+            median = np.median(list(filter(lambda x: not pd.isnull(x), sequence)))
+            middle_sequence = [abs(x - median) for x in sequence]
+            new_median = np.median(list(filter(lambda x: not pd.isnull(x), middle_sequence)))
 
-        # %% remove extreme values.
-        for index, D in enumerate(sequence):
-            if D > median + multiples * new_median:
-                sequence[index] = median + multiples * new_median
-            if D < median - multiples * new_median:
-                sequence[index] = median - multiples * new_median
+            # %% remove extreme values.
+            for index, D in enumerate(sequence):
+                if D > median + multiples * new_median:
+                    sequence[index] = median + multiples * new_median
+                if D < median - multiples * new_median:
+                    sequence[index] = median - multiples * new_median
 
         # %% standardize. 标准化以后的NA值是保留了的
         std = np.nanstd(sequence)

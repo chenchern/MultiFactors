@@ -29,6 +29,7 @@ class RegressionTest:
     """
     def __init__(self, data, factor_name, start_date=None, end_date=None, freq='BM'):
         """
+        注意数据的pnl这一列存的是不是对应日期那一期对上一期的收益率，而是下一期对当期的收益率
 
         :param data: pd.DataFrame.
                 data of a single factor with columns: e.g ['ind_name', 'stock_code', 'date', 'market_cap', 'ep', 'pnl']
@@ -64,7 +65,9 @@ class RegressionTest:
         >>> self._regression(_date)
         """
         data = self.data[self.data['date'] == _date].reset_index(drop=True)
-        assert data.shape[0] > 0, "in RegressionTest._regression: Empty dataframe on specific day!"
+        if data.shape[0] == 0:
+            print("in RegressionTest._regression: Empty dataframe on {}!".format(_date))
+            return
 
         data[self.factor_name] = BasicUtils._standardize(data[self.factor_name])  # %% 标准化
         data[self.factor_name] = data[self.factor_name].fillna(0)  # %% 对缺失值的处理取标准化后序列的均值：因子值与全市场情况相同
@@ -92,7 +95,7 @@ class RegressionTest:
 
         :return:
         :examples:
-        >>> start_date = '2010-02-01'
+        >>> start_date = '2019-02-01'
         >>> end_date = '2019-12-31'
         >>> self = RegressionTest(raw_data, 'ep', start_date, end_date)
         >>> test = self.regressions()
@@ -101,6 +104,7 @@ class RegressionTest:
             raise RegressionTestUnderflow('in RegressionTest.regressions!')
 
         parameters = [self._regression(_date) for _date in self.date_range]  # TODO: try multiprocess
+        parameters = list(filter(None.__ne__, parameters))
         t_value_seq = [param[0] for param in parameters]
         coef_seq = [param[1] for param in parameters]
 
@@ -108,9 +112,60 @@ class RegressionTest:
 
     def _ic(self, _date):
         """
+        Calculate IC of a single factor on a specific day.
+
+        :param: _date: string.
+        :return: pearson_ic: float, IC value.
+        :examples:
+        >>> _date = '2019-05-31'
+        >>> self = RegressionTest(raw_data, 'ep')
+        """
+        data = self.data[self.data['date'] == _date].reset_index(drop=True)
+        if data.shape[0] == 0:
+            print("in RegressionTest._ic: Empty dataframe on {}!".format(_date))
+            return
+
+        # %% 对因子列和市值列均做标准化处理
+        data[self.factor_name] = BasicUtils._standardize(data[self.factor_name])
+        data[self.factor_name] = data[self.factor_name].fillna(0)
+        data['market_cap'] = BasicUtils._standardize(data['market_cap'], multiples=None)
+
+        ind = data['ind_name'].unique().tolist()
+        data = BasicUtils.df_one_hot_encode(data, 'ind_name').drop('ind_name', axis=1)
+
+        ind.append('market_cap')
+        x = sm.add_constant(data[ind])
+        y = data[self.factor_name]
+
+        reg = sm.OLS(y, x)
+        res = reg.fit()
+
+        residule = res.resid
+        pearson_ic = np.corrcoef(data['pnl'], residule)[0, 1]
+
+        return pearson_ic
+
+    def ics(self):
+        """
 
         :return:
+        :examples:
+        >>> start_date = '2019-05-01'
+        >>> end_date = '2019-12-31'
+        >>> self = RegressionTest(raw_data, 'ep', start_date, end_date)
         """
+        if 'date_range' not in list(self.__dict__.keys()):
+            raise RegressionTestUnderflow('in RegressionTest.regressions!')
+
+        ic_seq = [self._ic(_date) for _date in self.date_range]
+        ic_seq = list(filter(None.__ne__, ic_seq))
+
+        return ic_seq
+
+
+
+
+
 
 
 
