@@ -15,7 +15,7 @@ We provide three method to verify whether a single factor is useful.
 """
 
 
-class RegressionTestUnderflow(AttributeError):
+class SingleFactorTestUnderflow(AttributeError):
     pass
 
 
@@ -27,6 +27,8 @@ class FactorInitial:
     >>> price['date'] = DateUtils.to_floor_busi_day(*price['date'])  # %% 因为回归法测试的时候要用下一期的股票收益率
     >>> raw_data = pd.merge(valuation, price, on=['stock_code', 'date'], how='left')
     >>> raw_data['ep'] = 1 / raw_data['pe_ratio']
+    >>> raw_data.to_csv('test.csv')
+    >>> raw_data = pd.read_csv('test.csv')
     """
     def __init__(self, data, factor_name, start_date=None, end_date=None, freq='BM'):
         """
@@ -108,7 +110,7 @@ class RegressionTest(FactorInitial):
         >>> test = self.regressions()
         """
         if 'date_range' not in list(self.__dict__.keys()):
-            raise RegressionTestUnderflow('in RegressionTest.regressions!')
+            raise SingleFactorTestUnderflow('in RegressionTest.regressions!')
 
         parameters = [self._regression(_date) for _date in self.date_range]  # TODO: try multiprocess
         parameters = list(filter(None.__ne__, parameters))
@@ -168,7 +170,7 @@ class ICTest(FactorInitial):
         >>> self = ICTest(raw_data, 'ep', start_date, end_date)
         """
         if 'date_range' not in list(self.__dict__.keys()):
-            raise RegressionTestUnderflow('in RegressionTest.regressions!')
+            raise SingleFactorTestUnderflow('in RegressionTest.regressions!')
 
         ic_seq = [self._ic(_date) for _date in self.date_range]
         ic_seq = list(filter(None.__ne__, ic_seq))  # %% 把ic_seq里的None去掉
@@ -179,21 +181,26 @@ class ICTest(FactorInitial):
 class HierBackTest(FactorInitial):
     """
     Hierarchical backtest method to test single factors.
+    
     """
-    def stocks_div_single_ind(self, _date, industry, hier_num=5):
+    def __init__(self, data, factor_name, start_date=None, end_date=None, freq='BM', hier_num=5):
+        FactorInitial.__init__(self, data, factor_name, start_date, end_date, freq)
+        self.hier_num = hier_num
+
+    def stocks_div_single_ind(self, _date, industry):
         """
         分层回测模型中将某个交易日单个行业内的全部股票根据因子值分为若干层，函数不做扩展，将所有股票处理成等权。
 
         :param _date:
         :param industry:
-        :param hier_num:
         :return: hier: list of dict.
         :examples:
         >>> _date = '2018-01-31'
         >>> industry = '医药生物I'
         >>> industry = '交通运输I'
-        >>> self = HierBackTest(raw_data, 'ep')
-        >>> self.stocks_div_single_ind(_date, industry, 10)
+        >>> industry = '休闲服务I'
+        >>> self = HierBackTest(raw_data, 'ep', hier_num=17)
+        >>> self.stocks_div_single_ind(_date, industry)
         """
         cond_ind = self.data['ind_name'] == industry
         cond_date = self.data['date'] == _date
@@ -201,11 +208,11 @@ class HierBackTest(FactorInitial):
         data = data.sort_values(self.factor_name, ascending=False).reset_index(drop=True)
 
         stock_num = data.shape[0]
-        stock_each_hier = stock_num / hier_num  # %% 不直接按权值来处理，直接考虑n只股票均分
+        stock_each_hier = stock_num / self.hier_num  # %% 不直接按权值来处理，直接考虑n只股票均分
         assert stock_each_hier > 1, "there are too many hierarchy! Please enter a smaller number!"
 
         hier = []
-        for k in range(1, hier_num + 1):
+        for k in range(1, self.hier_num + 1):
             ceil = math.ceil((k-1) * stock_each_hier)
             floor = math.floor(k * stock_each_hier)
             index = np.arange(ceil+1, floor+1) - 1
@@ -213,43 +220,46 @@ class HierBackTest(FactorInitial):
             _hier = dict(zip(data.iloc[index]['code'], [1] * len(index)))
 
             # %% 细节在于分割点处的那只股票如何按比例划分入左右相邻的层次里
-            if k == 1 and (stock_num * k) % hier_num != 0:
+            if k == 1 and (stock_num * k) % self.hier_num != 0:
                 _hier[data.iloc[index[-1] + 1]['code']] = math.modf(k * stock_each_hier)[0]  # %% 保存最后一只票的权值
-            elif k == hier_num and (stock_num * (k-1)) % hier_num != 0:
+            elif k == self.hier_num and (stock_num * (k-1)) % self.hier_num != 0:
                 _hier[data.iloc[index[0] - 1]['code']] = 1 - math.modf((k - 1) * stock_each_hier)[0]  # %% 保存第一只票的权值
             else:
-                if (stock_num * (k-1)) % hier_num != 0:
+                if index.size == 0:  # %% 这种情况说明均分的权重太小了，划分以后这块不存在权值为1的票
+                    index = [ceil, ceil-1]
+                if (stock_num * (k-1)) % self.hier_num != 0:
                     _hier[data.iloc[index[0] - 1]['code']] = 1 - math.modf((k - 1) * stock_each_hier)[0]
-                if (stock_num * k) % hier_num != 0:
+                if (stock_num * k) % self.hier_num != 0:
                     _hier[data.iloc[index[-1] + 1]['code']] = math.modf(k * stock_each_hier)[0]
 
+            # 每层内部权重归一化处理
+            w_sum = sum(_hier.values())
+            _hier = {key: value / w_sum for key, value in _hier.items()}
             hier.append(_hier)
 
         return hier
 
-    def stocks_div_all_inds(self, _date, ind_weight=None, hier_num=5):
+    def stocks_div_all_inds(self, _date, ind_weight=None):
         """
-        给定某个日期全行业之间的权重占比，这个权重保持和当天基准指数的行业配比相同，计算出各层的所有股票数，基准为1股
+        给定某个日期全行业之间的权重占比，这个权重保持和当天基准指数的行业配比相同，计算出各层的所有股票数，以权重形式给出
         行业之间的权重占比可以按照各行业的市值比给出
 
         :param _date:
         :param ind_weight: dict. weight of all industries.
-        :param hier_num:
         :return:
-        >>> self = HierBackTest(raw_data, 'ep')
-        >>> all_ind_hier = self.stocks_div_all_inds(_date, hier_num=17)
+        >>> self = HierBackTest(raw_data, 'ep', hier_num=5)
+        >>> all_ind_hier = self.stocks_div_all_inds(_date)
         >>> [len(d.values()) for d in all_ind_hier]
         """
         ind = self.data['ind_name'].unique().tolist()
         if ind_weight is None:
             ind_weight = dict(zip(ind, [1/len(ind)] * len(ind)))
 
-        # all_ind_hier = [dict()] * hier_num
-        all_ind_hier = [dict() for q in range(hier_num)]  # %% 上面这句话太坑了，浅拷贝，更改一个dict，其他的dict都会被更改
+        # all_ind_hier = [dict()] * self.hier_num
+        all_ind_hier = [dict() for q in range(self.hier_num)]  # %% 上面这句话太坑了，浅拷贝，更改一个dict，其他的dict都会被更改
 
         for _ind in ind:
-            print(_ind)  # TODO: when hier_num is 17, IndexError.
-            single_ind_hier = self.stocks_div_single_ind(_date, _ind, hier_num)
+            single_ind_hier = self.stocks_div_single_ind(_date, _ind)
 
             # %% 对单行业内的每个层的股票都乘上该行业的权值
             for i, _hier in enumerate(single_ind_hier):
@@ -257,6 +267,56 @@ class HierBackTest(FactorInitial):
                 # print(i, _hier)
                 all_ind_hier[i].update(_hier)
 
+        # %% 每层内部权重归一化处理
+        for i, hier in enumerate(all_ind_hier):
+            w_sum = sum(all_ind_hier[i].values())
+            all_ind_hier[i] = {k: v / w_sum for k, v in all_ind_hier[i].items()}
+
         return all_ind_hier
 
-    # def
+    def _hier_backtest(self, bkt_hier, ind_weight=None):
+        """
+        单层分层回测函数
+
+        :param bkt_hier: int. index of hier that need backtest.
+        :param ind_weight:
+        :return:
+        :examples:
+        >>> self = HierBackTest(raw_data, 'ep', hier_num=5, start_date='2011-01-01', end_date='2019-11-30')
+        >>> bkt_hier = 2
+        >>> _date = '2018-01-31'
+        >>> self._hier_backtest(2)
+        """
+        if 'date_range' not in list(self.__dict__.keys()):
+            raise SingleFactorTestUnderflow('in RegressionTest.regressions!')
+
+        assert bkt_hier <= self.hier_num, "bkt_hier too large!"
+        portfolio_pnl = []
+        for _date in self.date_range:  # TODO: make ind_weight change along date.
+            print(_date)
+            stock_weight_dict = self.stocks_div_all_inds(_date, ind_weight)[bkt_hier-1]
+            data = self.data[self.data['date'] == _date].set_index('code')
+            pnl = data.loc[stock_weight_dict.keys(), 'pnl']
+            portfolio_pnl.append(sum(pnl * np.array(list(stock_weight_dict.values()))))
+
+        portfolio_pnl = np.array(portfolio_pnl) + 1
+
+        return pd.Series(np.array(portfolio_pnl).cumprod(), index=self.date_range)
+
+    def hier_backtest(self, bkt_hier=None):
+        """
+        多层分层回测函数
+
+        :param bkt_hier: Union[None, list]. list of index of hier that need backtest.
+                        e.g. [1,3,4] means that we need to backtest 1st, 3rd, 4th hierarchys.
+        :return:
+        :examples:
+        >>> bkt_hier = [1, 3, 4]
+        """
+        if 'date_range' not in list(self.__dict__.keys()):
+            raise SingleFactorTestUnderflow('in RegressionTest.regressions!')
+
+        bkt_hier = list(range(self.hier_num)) if bkt_hier is None else [x-1 for x in bkt_hier]
+        
+
+

@@ -184,3 +184,25 @@ class DateUtils:
         floor_busi_day = [DateUtils._to_floor_busi_day(date) for date in args]
 
         return floor_busi_day
+
+    @staticmethod
+    def _to_next_ceiling_busi_day(date):
+        """
+        Map a day to last business day of next month.
+
+        :param date:
+        :return:
+        >>> date = '2020-01-31'
+        >>> DateUtils._to_next_ceiling_busi_day('2019-12-31')
+        """
+        try:
+            date = parse(date)
+        except TypeError:
+            date = date
+
+        date = date + relativedelta(months=+1)
+        date = DateUtils._to_ceiling_busi_day(date)
+
+        return date
+
+
